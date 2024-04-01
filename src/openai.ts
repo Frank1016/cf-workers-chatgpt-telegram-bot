@@ -1,53 +1,118 @@
 export namespace OpenAI {
-    export interface Response {
-        id:      string;
-        object:  string;
-        created: number;
-        model:   string;
-        usage:   Usage;
-        choices: Choice[];
+    let BASE_URL = "https://api.openai.com/v1";
+    const IMAGE_GENERATION_SIZE = "512x512";
+    const REQUEST_TIMEOUT_MS = 10000; // 10 seconds
+
+    interface ErrorResponse {
+        message: string;
     }
 
-    export interface Choice {
-        message:       Message;
+    interface ChatCompletionResponse {
+        id: string;
+        object: string;
+        created: number;
+        model: string;
+        usage: Usage;
+        choices: Choice[];
+        error?: ErrorResponse; // Handle potential errors directly
+    }
+
+    interface ImageGenerationResponse<T> {
+        id: string;
+        object: string;
+        created: number;
+        model: string;
+        usage: Usage;
+        data?: T;
+        error?: ErrorResponse;
+    }
+
+    interface Choice {
+        message: Message;
         finish_reason: string;
-        index:         number;
+        index: number;
     }
 
     export interface Message {
-        role:    string;
+        role: string;
         content: string;
     }
 
-    export interface Usage {
-        prompt_tokens:     number;
+    interface Usage {
+        prompt_tokens: number;
         completion_tokens: number;
-        total_tokens:      number;
+        total_tokens: number;
     }
 
-    export async function complete(api_key: string, model: string, system: string, user: string, context: Message[]) {
-        if (system.trim() != "")
-            context.unshift({role: "system", content: system})
+    async function makeApiRequest<T>(endpoint: string, method: "POST" | "GET", apiKey: string, body?: any): Promise<T> {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+        try {
+            const response = await fetch(`${BASE_URL}${endpoint}`, {
+                method,
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${apiKey}`,
+                },
+                body: JSON.stringify(body),
+                signal: controller.signal,
+            });
 
-        const userHash = Array.from(
-            new Uint8Array(
-                await crypto.subtle.digest({name: 'SHA-256'}, new TextEncoder().encode(user))
-            )
-        ).map((b) => b.toString(16).padStart(2, "0")).join("")
+            clearTimeout(timeout);
+            if (!response.ok) {
+                const error: ErrorResponse = await response.json();
+                throw new Error(`API error: ${error.message}`);
+            }
 
-        const response = await fetch("https://api.openai.com/v1/chat/completions", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": "Bearer " + api_key,
-            },
-            body: JSON.stringify({
-                "model": model ? model : "gpt-3.5-turbo",
-                "user": userHash,
-                "messages": context
-            })
-        })
-        const json: OpenAI.Response = await response.json()
-        return json.choices[0].message.content.trim()
+            return response.json();
+        } catch (error) {
+            console.error("API call error:", error);
+            throw error; // Rethrow for custom handling by caller
+        }
     }
+
+    export async function complete(api_key: string, model: string, system: string, user: string, context: Message[]): Promise<string> {
+        if (system.trim() !== "") {
+            context.unshift({ role: "system", content: system });
+        }
+
+        const userHash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(user))))
+            .map((b) => b.toString(16).padStart(2, "0"))
+            .join("");
+
+        const endpoint = "/chat/completions";
+        const method = "POST";
+        const body = {
+            model: model,
+            user: userHash,
+            messages: context,
+        };
+
+        try {
+            const jsonResponse: ChatCompletionResponse = await makeApiRequest<ChatCompletionResponse>(endpoint, method, api_key, body);
+            if (jsonResponse.choices && jsonResponse.choices.length > 0) {
+                return jsonResponse.choices[0].message.content.trim();
+            } else {
+                console.error("Empty or invalid response from API.");
+                return "An error occurred while processing your request. Please try again later.";
+            }
+        } catch (error) {
+            console.error("Error calling OpenAI API:", error);
+            return "An error occurred while processing your request. Please try again later.";
+        }
+    }
+
+
+    export async function createImage(api_key: string, model: string, prompt: string): Promise<string> {
+        const jsonResponse: ImageGenerationResponse<{ url: string }[]> = await makeApiRequest("/images/generations", "POST", api_key, {
+            prompt,
+            model: model,
+            size: IMAGE_GENERATION_SIZE,
+            n: 1,
+        });
+
+        return jsonResponse.data?.[0].url ?? "No image URL";
+    }
+
 }
+

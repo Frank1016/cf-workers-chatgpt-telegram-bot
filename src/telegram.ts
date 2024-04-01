@@ -37,6 +37,7 @@ export namespace Telegram {
         id: string
     }
 
+
     export function generateAnswerInlineQueryResponse(inlineQueryID: string, text: string): Response {
         return new Response(JSON.stringify({
             "method": "answerInlineQuery",
@@ -168,6 +169,21 @@ export namespace Telegram {
         })
     }
 
+    export function generateSendPhotoResponse(chatID: string, photoUrl: string, additional_arguments?: { [key: string]: any }): Response {
+        return new Response(JSON.stringify({
+            "method": "sendPhoto",
+            "chat_id": chatID,
+            "photo": photoUrl,
+            // "caption": sanitize(caption),
+            ...additional_arguments
+        }), {
+            headers: {
+                "content-type": "application/json",
+            }
+        })
+    }
+
+
     export function sanitize(text: string): string {
         const split = text.split(/(```.*)/g)
         let inCodeBlock = false;
@@ -192,4 +208,5 @@ export namespace Telegram {
         return split.join("")
     }
 }
+
 

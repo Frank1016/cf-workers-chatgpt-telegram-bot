@@ -4,11 +4,12 @@ compatibility_date = "2023-03-02"
 workers_dev = true
 
 kv_namespaces = [
-    { binding = "CHATGPT_TELEGRAM_BOT_KV", id = "6a7ab1c53230452382b69cf98493cf18" }
+    { binding = "CHATGPT_TELEGRAM_BOT_KV", id = "c2fc4860d8e240cca8c462f01cb6b789" }
 ]
 
 [vars]
-TELEGRAM_USERNAME_WHITELIST = "jarylc Shirleymew"
+TELEGRAM_USERNAME_WHITELIST = "clement_morin"
 CHATGPT_MODEL = "gpt-3.5-turbo"
+IMAGE_MODEL = "dall-e-2"
 CHATGPT_BEHAVIOR = "Short, concise and accurate answers only"
 CONTEXT = 1

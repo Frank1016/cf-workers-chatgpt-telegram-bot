@@ -1,6 +1,7 @@
-import {OpenAI} from "./openai"
-import {Telegram} from "./telegram"
-import {Cloudflare} from "./cloudflare"
+
+import { Cloudflare } from "./cloudflare"
+import { OpenAI } from "./openai"
+import { Telegram } from "./telegram"
 
 export interface Env {
 	CHATGPT_TELEGRAM_BOT_KV: KVNamespace
@@ -8,17 +9,24 @@ export interface Env {
 	TELEGRAM_USERNAME_WHITELIST: string
 	OPENAI_API_KEY: string
 	CHATGPT_MODEL: string
+	IMAGE_MODEL: string
 	CHATGPT_BEHAVIOR: string
 	CONTEXT: number
 }
 
+interface CfProperties {
+	asOrganization?: string;
+	// Include other properties of the cf object you need
+}
+
+
 export default {
 	async fetch(
-		request: Request,
+		request: Request & { cf?: CfProperties }, // Asserting the type of request here
 		env: Env,
 		ctx: ExecutionContext,
 	): Promise<Response> {
-		if (!request.cf?.asOrganization.toLowerCase().includes("telegram") || !request.url.endsWith(env.TELEGRAM_BOT_TOKEN)) {
+		if (!request.cf?.asOrganization?.toLowerCase().includes("telegram") || !request.url.endsWith(env.TELEGRAM_BOT_TOKEN)) {
 			return new Response(null, {
 				status: 401,
 			})
@@ -28,9 +36,9 @@ export default {
 
 		// user is not in whitelist
 		const username = update.message?.from.username || update.inline_query?.from.username || update.callback_query?.from.username || ""
-		if (env.TELEGRAM_USERNAME_WHITELIST && !env.TELEGRAM_USERNAME_WHITELIST.split(" ").includes(username)) {
-			return new Response(null) // no action
-		}
+		// if (env.TELEGRAM_USERNAME_WHITELIST && !env.TELEGRAM_USERNAME_WHITELIST.split(" ").includes(username)) {
+		// 	return new Response(null) // no action
+		// }
 
 		// handle inline query confirmation flow
 		if (update.inline_query) {
@@ -44,6 +52,7 @@ export default {
 		if ((!update.message || !update.message.text) && (!update.callback_query)) {
 			return new Response(null) // no action
 		}
+
 		const chatID = update.message?.chat.id || update.callback_query?.chat_instance || null
 		if (chatID == null) {
 			return new Response(null) // no action
@@ -68,9 +77,9 @@ export default {
 
 		// handle commands
 		if (update.message && update.message.text) {
-			// message starts with /start or /chatgpt
-			if (query.startsWith("/start") || query.startsWith("/chatgpt")) {
-				return Telegram.generateSendMessageResponse(chatID, "COMMAND: Hi @"+ update.message.from.username+"! I'm a chatbot powered by OpenAI! Reply your query to this message!",
+			// message starts with /start or /help
+			if (query.startsWith("/start") || query.startsWith("/help")) {
+				return Telegram.generateSendMessageResponse(chatID, "Hi @" + update.message.from.username + "! I'm a chatbot powered by OpenAI! Reply your query to this message!",
 					{
 						"reply_markup": {
 							"force_reply": true,
@@ -84,7 +93,7 @@ export default {
 			// add replied to message to context (excluding command replies) if it exists
 			if (update.message.reply_to_message) {
 				if (!update.message.reply_to_message.text.startsWith("COMMAND:")) {
-					context.push({"role": (update.message.reply_to_message.from.is_bot ? "assistant" : "user"), "content": update.message.reply_to_message.text})
+					context.push({ "role": (update.message.reply_to_message.from.is_bot ? "assistant" : "user"), "content": update.message.reply_to_message.text })
 				}
 			}
 		}
@@ -120,18 +129,36 @@ export default {
 		}
 
 		// prepare context
-		context.push({"role": "user", "content": query})
+		context.push({ "role": "user", "content": query })
 
 		if (update.message) {
-			// query OpenAPI with context
-			const content = await complete(env, chatID, username, context)
 
-			return Telegram.generateSendMessageResponse(chatID, content, {
-				"reply_to_message_id": update.message.message_id,
-				"reply_markup": {
-					"remove_keyboard": true,
-				}
-			})
+			if (update.message.text.startsWith("/image")) {
+				const imagePrompt = update.message.text.substring("/image".length).trim();
+				const imageUrl = await OpenAI.createImage(env.OPENAI_API_KEY, env.IMAGE_MODEL, imagePrompt);
+
+				return Telegram.generateSendPhotoResponse(
+					update.message.chat.id,
+					imageUrl,
+					{ reply_to_message_id: update.message.message_id }
+				);
+
+
+			} else if (update.message.text.startsWith("/chat")) {
+				// query OpenAPI with context for text completion
+				const chatPrompt = update.message.text.substring("/chat".length).trim();
+				// prepare context
+				context.push({ "role": "user", "content": chatPrompt });
+				const content = await complete(env, chatID, username, context)
+
+				return Telegram.generateSendMessageResponse(chatID, content, {
+					"reply_to_message_id": update.message.message_id,
+					"reply_markup": {
+						"remove_keyboard": true,
+					}
+				});
+			}
+
 		} else if (update.callback_query) {
 			const callbackQuery = update.callback_query
 			ctx.waitUntil(new Promise(async _ => {
@@ -155,7 +182,7 @@ async function complete(env: Env, chatID: string, username: string, context: Ope
 
 	// save reply to context
 	if (env.CONTEXT && env.CONTEXT > 0 && env.CHATGPT_TELEGRAM_BOT_KV) {
-		context.push({"role": "assistant", "content": content})
+		context.push({ "role": "assistant", "content": content })
 		await Cloudflare.putKVChatContext(env.CHATGPT_TELEGRAM_BOT_KV, chatID, context)
 	}
 
