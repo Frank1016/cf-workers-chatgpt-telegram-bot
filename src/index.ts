@@ -79,7 +79,7 @@ export default {
 		if (update.message && update.message.text) {
 			// message starts with /start or /help
 			if (query.startsWith("/start") || query.startsWith("/help")) {
-				return Telegram.generateSendMessageResponse(chatID, "Hi @" + update.message.from.username + "! I'm a chatbot powered by OpenAI! Reply your query to this message!",
+				return Telegram.generateSendMessageResponse(chatID, "Hi @" + update.message.from.username + "! I'm an AI bot developed by $GROK|NEAR! Reply your query to this message!",
 					{
 						"reply_markup": {
 							"force_reply": true,
@@ -132,7 +132,11 @@ export default {
 		context.push({ "role": "user", "content": query })
 
 		if (update.message) {
-
+if (update.message.chat.type =='private') {
+	
+} else {
+	
+}
 			if (update.message.text.startsWith("/image")) {
 				const imagePrompt = update.message.text.substring("/image".length).trim();
 				const imageUrl = await OpenAI.createImage(env.OPENAI_API_KEY, env.IMAGE_MODEL, imagePrompt);
