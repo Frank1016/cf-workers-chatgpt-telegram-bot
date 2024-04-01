@@ -35,8 +35,10 @@ export namespace Telegram {
 
     export interface Chat {
         id: string
+        type: 'private' | 'group' | 'supergroup' | 'channel'; 
     }
 
+   
 
     export function generateAnswerInlineQueryResponse(inlineQueryID: string, text: string): Response {
         return new Response(JSON.stringify({
